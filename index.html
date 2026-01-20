@@ -30,12 +30,27 @@
         
         .icon-box { width: 50px; height: 50px; background-color: #eceff1; border-radius: 12px; display: flex; align-items: center; justify-content: center; margin-right: 15px; }
         .icon-box i { font-size: 1.5rem; color: var(--red-bombeiro); }
-        
         .card-text h3 { margin: 0; font-size: 1.1rem; font-weight: 700; color: var(--dark); }
         .card-text span { font-size: 0.8rem; color: #757575; }
 
-        #app-frame { position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: none; z-index: 999; background: white; display: none; }
+        /* --- TELA DE CARREGAMENTO (LOADING) --- */
+        #loading-screen {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(255, 255, 255, 0.95); z-index: 998; /* Fica abaixo do botão voltar, acima do iframe */
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .spinner {
+            width: 50px; height: 50px; border: 5px solid #f3f3f3; border-top: 5px solid var(--red-bombeiro);
+            border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 15px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .loading-text { color: var(--dark); font-weight: bold; font-size: 1.1rem; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+
+        /* IFRAME */
+        #app-frame { position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: none; z-index: 997; background: white; display: none; }
         
+        /* BOTÃO VOLTAR */
         #btn-voltar {
             position: fixed; bottom: 20px; right: 20px; z-index: 1000;
             background-color: var(--dark); color: white; border: none;
@@ -44,10 +59,20 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.3); cursor: pointer;
         }
 
-        #install-btn { display: none; width: 100%; padding: 15px; background: #2e7d32; color: white; border: none; border-radius: 10px; font-weight: bold; margin-bottom: 20px; }
+        /* BOTÃO INSTALAR */
+        #install-btn { display: none; width: 100%; padding: 15px; background: #2e7d32; color: white; border: none; border-radius: 10px; font-weight: bold; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        
+        /* AVISO IOS */
+        #ios-hint { display: none; background: #e3f2fd; color: #0d47a1; padding: 10px; border-radius: 10px; font-size: 0.85rem; margin-bottom: 20px; text-align: center; border: 1px solid #bbdefb; }
     </style>
 </head>
 <body>
+
+    <div id="loading-screen">
+        <div class="spinner"></div>
+        <div class="loading-text">Conectando ao CBMPA...</div>
+        <small style="margin-top: 10px; color: #777;">Aguarde um momento</small>
+    </div>
 
     <div id="main-menu">
         <div class="app-header">
@@ -57,6 +82,10 @@
 
         <div class="dashboard">
             <button id="install-btn"><i class="fas fa-download"></i> INSTALAR APLICATIVO</button>
+            <div id="ios-hint">
+                Para instalar no <strong>iPhone</strong>:<br>
+                Toque em <strong>Compartilhar</strong> <i class="fas fa-share-square"></i> e depois em <strong>"Adicionar à Tela de Início"</strong>.
+            </div>
 
             <div class="card-menu" onclick="abrirApp('https://script.google.com/macros/s/AKfycbwPme3qI7JPbhmAFoyAA1LBKRQd3_tLAReUzxEdZKpQzTQtW_g1g3qn77cozs-Qu_C-/exec')">
                 <div class="icon-box"><i class="fas fa-clipboard-check"></i></div>
@@ -80,18 +109,33 @@
     <button id="btn-voltar" onclick="fecharApp()"><i class="fas fa-home fa-lg"></i></button>
 
     <script>
+        // --- FUNÇÃO PARA ABRIR COM CARREGAMENTO ---
         function abrirApp(url) {
-            if(url.includes("COLE_O_LINK")) { alert("Link da Conferência não configurado!"); return; }
+            if(url.includes("COLE_O_LINK")) { alert("Link da Conferência não configurado no código!"); return; }
+            
+            // 1. Esconde menu, Mostra Loading
             document.getElementById('main-menu').style.display = 'none';
+            document.getElementById('loading-screen').style.display = 'flex';
+            
+            // 2. Carrega o Iframe
             const frame = document.getElementById('app-frame');
             frame.src = url;
-            frame.style.display = 'block';
-            document.getElementById('btn-voltar').style.display = 'flex';
+            frame.style.display = 'block'; // O iframe fica visível, mas atrás do loading por enquanto
+            
+            // 3. Quando o Iframe terminar de carregar, esconde o Loading
+            frame.onload = function() {
+                // Dá um tempinho extra de 1 seg só pra garantir que o Google renderizou
+                setTimeout(() => {
+                    document.getElementById('loading-screen').style.display = 'none';
+                    document.getElementById('btn-voltar').style.display = 'flex';
+                }, 1000);
+            };
         }
 
         function fecharApp() {
             document.getElementById('app-frame').style.display = 'none';
             document.getElementById('app-frame').src = 'about:blank';
+            document.getElementById('loading-screen').style.display = 'none';
             document.getElementById('btn-voltar').style.display = 'none';
             document.getElementById('main-menu').style.display = 'block';
         }
@@ -101,14 +145,30 @@
             if (event.data === "fecharApp") { fecharApp(); }
         });
 
-        // Lógica de Instalação (PWA)
+        // --- LÓGICA DE INSTALAÇÃO INTELIGENTE ---
         let deferredPrompt;
+        
+        // Detectar se é iPhone
+        const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        if (isIos) {
+            document.getElementById('ios-hint').style.display = 'block';
+        }
+
+        // Evento Android/Chrome
         window.addEventListener('beforeinstallprompt', (e) => {
-            e.preventDefault(); deferredPrompt = e;
-            const btn = document.getElementById('install-btn'); btn.style.display = 'block';
+            e.preventDefault(); // Impede o navegador de mostrar o banner padrão feio
+            deferredPrompt = e;
+            const btn = document.getElementById('install-btn');
+            
+            // Mostra o nosso botão bonito
+            btn.style.display = 'block';
+            
             btn.addEventListener('click', () => {
-                btn.style.display = 'none'; deferredPrompt.prompt();
-                deferredPrompt.userChoice.then((choiceResult) => { deferredPrompt = null; });
+                btn.style.display = 'none';
+                deferredPrompt.prompt(); // Mostra a caixa de confirmação do Android
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    deferredPrompt = null;
+                });
             });
         });
 
